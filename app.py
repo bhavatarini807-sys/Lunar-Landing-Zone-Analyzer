@@ -14,7 +14,7 @@ st.write("Upload a lunar surface image to analyze the landing zone.")
 MODEL_PATH = "lunar_landing_safety_model.keras"
 
 # Paste your Google Drive FILE ID below
-DRIVE_FILE_ID = "https://drive.google.com/file/d/1AWV2dwrafu2pfnDtoKzNPd_qe6SsxCL1/view?usp=sharing"
+DRIVE_FILE_ID = "1AWV2dwrafu2pfnDtoKzNPd_qe6SsxCL1"
 @st.cache_resource
 def load_model():
     if not os.path.exists(MODEL_PATH):
@@ -22,7 +22,7 @@ def load_model():
         gdown.download(url, MODEL_PATH, quiet=False)
     return tf.keras.models.load_model(MODEL_PATH)
 
-if DRIVE_FILE_ID == "https://drive.google.com/file/d/1AWV2dwrafu2pfnDtoKzNPd_qe6SsxCL1/view?usp=sharing":
+if DRIVE_FILE_ID == "1AWV2dwrafu2pfnDtoKzNPd_qe6SsxCL1":
     st.warning("Add your Google Drive file ID in the code first.")
 else:
     try:
