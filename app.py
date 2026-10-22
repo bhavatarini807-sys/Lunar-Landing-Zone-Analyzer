@@ -39,7 +39,7 @@ except Exception as e:
 if model is None:
     st.error(
         "Model file not found! Place "
-        "lunar_landing_safety_model.keras "
+        "lunar_model.keras "
         "in the same folder as app.py."
     )
     st.stop()
@@ -171,9 +171,5 @@ if uploaded_file is not None:
         "a direct measurement of landing risk."
     )
 
-    st.info(
-        "This is an AI-assisted preliminary result. "
-        "A SAFE prediction does not guarantee a safe landing."
-    )
 
 
