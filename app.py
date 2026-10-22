@@ -173,5 +173,5 @@ if uploaded_file is not None:
         "This is an AI-assisted preliminary result. "
         "A SAFE prediction does not guarantee a safe landing."
     )
-```
+
 
