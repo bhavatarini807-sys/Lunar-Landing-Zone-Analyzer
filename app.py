@@ -17,7 +17,7 @@ st.write("Upload a lunar surface image to analyze the landing zone.")
 
 MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "lunar_landing_safety_model.keras"
+    "lunar_model.keras"
 )
 
 IMG_SIZE = (224, 224)
