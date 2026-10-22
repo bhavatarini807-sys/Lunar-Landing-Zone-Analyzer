@@ -11,7 +11,7 @@ st.set_page_config(page_title="AI Lunar Landing Zone Analyzer", page_icon="🌕"
 st.title("🌕 AI Lunar Landing Zone Safety Analyzer")
 st.write("Upload a lunar surface image to analyze the landing zone.")
 
-MODEL_PATH = "lunar_landing_safety_model.keras"
+MODEL_PATH = "lunar_model.keras"
 
 # Paste your Google Drive FILE ID below
 DRIVE_FILE_ID = "1AWV2dwrafu2pfnDtoKzNPd_qe6SsxCL1"
