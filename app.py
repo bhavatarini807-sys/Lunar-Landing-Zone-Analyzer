@@ -6,6 +6,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
+# ---------------- PAGE SETTINGS ----------------
 st.set_page_config(
     page_title="AI Lunar Landing Zone Analyzer",
     page_icon="🌕",
@@ -17,126 +18,112 @@ st.write(
     "Upload a lunar surface image to analyze the landing zone."
 )
 
-# Keep this model file in the same folder as app.py
+IMG_SIZE = (224, 224)
+
 MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "lunar_model.keras"
 )
 
-IMG_SIZE = (224, 224)
 
-
+# ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    if not os.path.exists(MODEL_PATH):
+    if not os.path.isfile(MODEL_PATH):
         raise FileNotFoundError(
-            "Model file not found: "
-            "lunar_landing_safety_model.keras"
+            "Model file not found. Keep "
+            "'lunar_landing_safety_model.keras' "
+            "in the same folder as app.py."
         )
 
-    model = tf.keras.models.load_model(MODEL_PATH)
-
-    # Build the model before accessing its layers
-    dummy_input = tf.zeros((1, 224, 224, 3))
-    _ = model(dummy_input, training=False)
-
-    return model
+    return tf.keras.models.load_model(MODEL_PATH)
 
 
+# ---------------- PREPARE IMAGE ----------------
 def prepare_image(image):
     resized = image.resize(IMG_SIZE)
     array = np.asarray(resized, dtype=np.float32) / 255.0
     return np.expand_dims(array, axis=0)
 
 
-def find_last_conv_layer(model):
-    # Search from the last layer backwards
-    for layer in reversed(model.layers):
+# ---------------- FIND LAST CONVOLUTION LAYER ----------------
+def find_last_conv_layer(container):
+    for layer in reversed(container.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
             return layer
 
         if isinstance(layer, tf.keras.Model):
-            found = find_last_conv_layer(layer)
-            if found is not None:
-                return found
+            result = find_last_conv_layer(layer)
+            if result is not None:
+                return result
 
     return None
 
 
+# ---------------- GRAD-CAM HEATMAP ----------------
 def make_gradcam_heatmap(img_array, model):
-    # Ensure the main model has been called
-    _ = model(img_array, training=False)
-
     conv_layer = find_last_conv_layer(model)
 
     if conv_layer is None:
         raise ValueError(
-            "No convolutional layer found for Grad-CAM."
+            "No Conv2D layer found in the saved model."
         )
 
-    # Locate the model containing the selected convolutional layer
-    nested_model = None
+    # Rebuild a differentiable forward pass without using
+    # nested layers' .output property.
+    input_tensor = tf.keras.Input(shape=(224, 224, 3))
 
-    for layer in model.layers:
-        if isinstance(layer, tf.keras.Model):
-            try:
-                _ = layer(img_array, training=False)
-                if conv_layer in layer.layers:
-                    nested_model = layer
-                    break
-            except Exception:
+    def forward(container, x, target):
+        activation = None
+
+        for layer in container.layers:
+            if isinstance(layer, tf.keras.layers.InputLayer):
                 continue
 
-    if nested_model is not None:
-        # Nested Sequential/Functional model
-        inner_grad_model = tf.keras.Model(
-            inputs=nested_model.inputs,
-            outputs=[
-                conv_layer.output,
-                nested_model.output
-            ]
+            if isinstance(layer, tf.keras.Model):
+                x, nested_activation = forward(
+                    layer, x, target
+                )
+                if nested_activation is not None:
+                    activation = nested_activation
+            else:
+                x = layer(x)
+
+                if layer is target:
+                    activation = x
+
+        return x, activation
+
+    predictions, activations = forward(
+        model, input_tensor, conv_layer
+    )
+
+    if activations is None:
+        raise ValueError(
+            "Could not connect the selected convolutional layer."
         )
 
-        with tf.GradientTape() as tape:
-            conv_outputs, nested_predictions = inner_grad_model(
-                img_array, training=False
-            )
+    grad_model = tf.keras.Model(
+        inputs=input_tensor,
+        outputs=[activations, predictions]
+    )
 
-            # Pass the nested output through remaining layers
-            x = nested_predictions
-
-            start_index = model.layers.index(nested_model) + 1
-
-            for layer in model.layers[start_index:]:
-                x = layer(x, training=False)
-
-            predictions = x
-            score = predictions[:, 0]
-
-        gradients = tape.gradient(score, conv_outputs)
-
-    else:
-        # Convolutional layer belongs directly to the main model
-        grad_model = tf.keras.Model(
-            inputs=model.inputs,
-            outputs=[conv_layer.output, model.output]
+    with tf.GradientTape() as tape:
+        conv_outputs, model_predictions = grad_model(
+            img_array, training=False
         )
 
-        with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(
-                img_array, training=False
-            )
-            score = predictions[:, 0]
+        # Assumes a single sigmoid output.
+        score = model_predictions[:, 0]
 
-        gradients = tape.gradient(score, conv_outputs)
+    gradients = tape.gradient(score, conv_outputs)
 
     if gradients is None:
         raise ValueError(
-            "Gradients unavailable. Model architecture "
-            "may require a custom Grad-CAM implementation."
+            "Gradients are unavailable for this model architecture."
         )
 
-    # Calculate Grad-CAM weights and heatmap
+    # Average gradients across the feature-map dimensions.
     weights = tf.reduce_mean(gradients, axis=(1, 2))
 
     heatmap = tf.reduce_sum(
@@ -152,10 +139,11 @@ def make_gradcam_heatmap(img_array, model):
     return heatmap.numpy()
 
 
+# ---------------- CREATE HEATMAP OVERLAY ----------------
 def create_overlay(image, heatmap):
     original = np.asarray(image.resize(IMG_SIZE))
 
-    heatmap_resized = tf.image.resize(
+    resized_heatmap = tf.image.resize(
         heatmap[..., np.newaxis],
         IMG_SIZE
     ).numpy().squeeze()
@@ -163,7 +151,7 @@ def create_overlay(image, heatmap):
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.imshow(original)
     ax.imshow(
-        heatmap_resized,
+        resized_heatmap,
         cmap="jet",
         alpha=0.45,
         vmin=0,
@@ -175,7 +163,7 @@ def create_overlay(image, heatmap):
     return fig
 
 
-# Load model and display application
+# ---------------- MAIN APPLICATION ----------------
 try:
     model = load_model()
     st.success("AI model loaded successfully!")
@@ -206,10 +194,11 @@ try:
                     np.asarray(prediction).reshape(-1)[0]
                 )
 
+            # Prediction result
             st.subheader("Prediction Result")
             st.metric("Prediction Score", f"{score:.4f}")
 
-            # Assumption: sigmoid output 1 = Safe, 0 = Hazardous
+            # Assumption: model output 1 = Safe, 0 = Hazardous.
             if score >= 0.5:
                 st.success("🟢 Landing Zone: SAFE")
                 st.write(
@@ -223,6 +212,7 @@ try:
                     "inspect another location."
                 )
 
+            # Grad-CAM heatmap
             st.divider()
             st.subheader("🔥 Grad-CAM Heatmap Visualization")
 
@@ -248,32 +238,31 @@ try:
                         use_container_width=True
                     )
 
-                st.pyplot(
-                    create_overlay(image, heatmap),
-                    use_container_width=True
-                )
-
-                plt.close("all")
+                overlay_fig = create_overlay(image, heatmap)
+                st.pyplot(overlay_fig, use_container_width=True)
+                plt.close(overlay_fig)
 
                 st.caption(
-                    "Red/yellow regions show areas that influence "
-                    "the model's prediction. This is an explanation "
-                    "heatmap, not verified rock or crater detection."
+                    "The heatmap highlights image regions that "
+                    "influence the model's prediction. It does "
+                    "not independently confirm rocks or craters."
                 )
 
             except Exception as heatmap_error:
                 st.warning(
-                    "Prediction completed, but the heatmap "
-                    "could not be generated."
+                    "Prediction completed, but heatmap generation "
+                    "failed for this model."
                 )
-                st.code(str(heatmap_error))
+                st.code(
+                    f"{type(heatmap_error).__name__}: "
+                    f"{heatmap_error}"
+                )
 
             st.caption(
-                "Research demonstration only. Confirm the output "
-                "class mapping and image preprocessing against "
-                "the original model training code."
+                "Research demo only. Verify class mapping and "
+                "preprocessing against the original training code."
             )
 
-except Exception as e:
+except Exception as error:
     st.error("Model loading failed.")
-    st.code(str(e))
+    st.code(f"{type(error).__name__}: {error}")
