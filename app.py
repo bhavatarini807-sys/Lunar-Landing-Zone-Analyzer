@@ -49,9 +49,11 @@ if model is None:
 # -------------------------------
 uploaded_file = st.file_uploader(
     "Upload Lunar Image",
-    type=["jpg", "jpeg", "png"]
+    type=[
+        "jpg", "jpeg", "png",
+        "webp", "bmp", "tif", "tiff"
+    ]
 )
-
 if uploaded_file is not None:
 
     image = Image.open(uploaded_file).convert("RGB")
