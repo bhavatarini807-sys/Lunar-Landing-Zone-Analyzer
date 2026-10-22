@@ -1,4 +1,4 @@
-
+```python
 import os
 import streamlit as st
 import numpy as np
@@ -7,270 +7,171 @@ import matplotlib.pyplot as plt
 import cv2
 from PIL import Image
 
-# ==========================================
-# 1. PAGE SETTINGS
-# ==========================================
-
+# -------------------------------
+# PAGE CONFIGURATION
+# -------------------------------
 st.set_page_config(
-    page_title="AI Lunar Landing Zone Analyzer",
+    page_title="AI Lunar Landing Zone Safety Analyzer",
     page_icon="🌕",
     layout="wide"
 )
 
 st.title("🌕 AI Lunar Landing Zone Safety Analyzer")
-st.write(
-    "Upload a lunar surface image to analyze the landing zone."
-)
+st.write("Upload a lunar surface image to analyze the landing zone.")
 
-IMG_SIZE = (224, 224)
-
-MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "lunar_model.keras"
-)
-
-
-# ==========================================
-# 2. LOAD CNN MODEL
-# ==========================================
+# -------------------------------
+# LOAD TRAINED MODEL
+# -------------------------------
+MODEL_PATH = "lunar_model.keras"
 
 @st.cache_resource
 def load_model():
-    if not os.path.isfile(MODEL_PATH):
-        raise FileNotFoundError(
-            "Model file not found! Place "
-            "'lunar_landing_safety_model.keras' "
-            "in the same folder as app.py."
-        )
-
+    if not os.path.exists(MODEL_PATH):
+        return None
     return tf.keras.models.load_model(MODEL_PATH)
-
-
-# ==========================================
-# 3. IMAGE PREPROCESSING
-# ==========================================
-
-def prepare_image(image):
-    img = np.array(image.convert("RGB"))
-
-    img_resized = cv2.resize(img, IMG_SIZE)
-
-    img_input = img_resized.astype("float32") / 255.0
-
-    img_input = np.expand_dims(img_input, axis=0)
-
-    return img, img_input
-
-
-# ==========================================
-# 4. TERRAIN HEATMAP
-# Same logic as Google Colab
-# ==========================================
-
-def create_terrain_heatmap(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    gray = cv2.resize(gray, IMG_SIZE)
-
-    # Highlight darker regions
-    hazard_map = 255 - gray
-
-    # Smooth the visualization
-    hazard_map = cv2.GaussianBlur(
-        hazard_map,
-        (21, 21),
-        0
-    )
-
-    return hazard_map
-
-
-# ==========================================
-# 5. MAIN APPLICATION
-# ==========================================
 
 try:
     model = load_model()
+except Exception as e:
+    st.error(f"Model loading error: {e}")
+    st.stop()
 
-    st.success("AI model loaded successfully!")
-
-    uploaded_file = st.file_uploader(
-        "Upload a lunar surface image",
-        type=["jpg", "jpeg", "png", "jfif"]
+if model is None:
+    st.error(
+        "Model file not found! Place "
+        "lunar_landing_safety_model.keras "
+        "in the same folder as app.py."
     )
+    st.stop()
 
-    if uploaded_file is not None:
+# -------------------------------
+# IMAGE UPLOAD
+# -------------------------------
+uploaded_file = st.file_uploader(
+    "Upload Lunar Image",
+    type=["jpg", "jpeg", "png"]
+)
 
-        image = Image.open(uploaded_file).convert("RGB")
+if uploaded_file is not None:
 
-        img, img_input = prepare_image(image)
+    image = Image.open(uploaded_file).convert("RGB")
+    img_array = np.array(image)
 
-        st.subheader("Uploaded Lunar Image")
+    # Resize for model prediction
+    resized_img = cv2.resize(img_array, (224, 224))
+    img_input = resized_img.astype("float32") / 255.0
+    img_input = np.expand_dims(img_input, axis=0)
 
-        st.image(
-            img,
-            caption=uploaded_file.name,
-            use_container_width=True
+    # -------------------------------
+    # MODEL PREDICTION
+    # -------------------------------
+    with st.spinner("Analyzing lunar surface..."):
+        prediction = model.predict(img_input, verbose=0)
+        score = float(prediction[0][0])
+
+    if score >= 0.5:
+        landing_zone = "HAZARDOUS"
+        recommendation = "NOT RECOMMENDED FOR LANDING"
+    else:
+        landing_zone = "SAFE"
+        recommendation = (
+            "POTENTIALLY SUITABLE - "
+            "FURTHER CHECKS NEEDED"
         )
 
-        if st.button(
-            "Analyze Landing Zone",
-            type="primary"
-        ):
+    st.subheader("Analysis Results")
 
-            # ==========================================
-            # CNN PREDICTION
-            # ==========================================
+    # -------------------------------
+    # RESULT SUMMARY
+    # -------------------------------
+    if landing_zone == "SAFE":
+        st.success("Landing Zone: SAFE")
+    else:
+        st.error("Landing Zone: HAZARDOUS")
 
-            with st.spinner("Analyzing lunar terrain..."):
+    st.write(f"**Prediction Score:** {score:.4f}")
+    st.write(f"**Recommendation:** {recommendation}")
 
-                prediction = model.predict(
-                    img_input,
-                    verbose=0
-                )
+    # -------------------------------
+    # TERRAIN HEATMAP
+    # Same OpenCV method as Colab
+    # -------------------------------
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    gray = cv2.resize(gray, (224, 224))
 
-                score = float(
-                    np.asarray(prediction).reshape(-1)[0]
-                )
-
-            # Same threshold logic as Colab
-            if score >= 0.5:
-                result = "HAZARDOUS"
-                recommendation = (
-                    "NOT RECOMMENDED FOR LANDING"
-                )
-            else:
-                result = "SAFE"
-                recommendation = (
-                    "POTENTIALLY SUITABLE - "
-                    "FURTHER CHECKS NEEDED"
-                )
-
-            # ==========================================
-            # DISPLAY PREDICTION
-            # ==========================================
-
-            st.divider()
-            st.subheader("🤖 AI Prediction Result")
-
-            st.write(
-                f"**Image Name:** {uploaded_file.name}"
-            )
-
-            st.metric(
-                "Prediction Score",
-                f"{score:.4f}"
-            )
-
-            if result == "HAZARDOUS":
-                st.error("🔴 Landing Zone: HAZARDOUS")
-            else:
-                st.success("🟢 Landing Zone: SAFE")
-
-            st.info(
-                f"Recommendation: {recommendation}"
-            )
-
-            # ==========================================
-            # DISPLAY TERRAIN HEATMAP
-            # ==========================================
-
-            st.divider()
-            st.subheader(
-                "🔥 Terrain Visualization Heatmap"
-            )
-
-            hazard_map = create_terrain_heatmap(img)
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.image(
-                    img,
-                    caption="Uploaded Lunar Image",
-                    use_container_width=True
-                )
-
-            with col2:
-                fig, ax = plt.subplots(figsize=(6, 6))
-
-                heat = ax.imshow(
-                    hazard_map,
-                    cmap="jet"
-                )
-
-                ax.set_title(
-                    "Terrain Visualization Heatmap"
-                )
-
-                ax.axis("off")
-
-                fig.colorbar(
-                    heat,
-                    ax=ax,
-                    label="Relative Intensity"
-                )
-
-                fig.tight_layout()
-
-                st.pyplot(
-                    fig,
-                    use_container_width=True
-                )
-
-                plt.close(fig)
-
-            # ==========================================
-            # HEATMAP OVERLAY
-            # ==========================================
-
-            st.subheader(
-                "🗺️ Heatmap Overlay on Lunar Image"
-            )
-
-            fig, ax = plt.subplots(figsize=(8, 6))
-
-            ax.imshow(img)
-
-            ax.imshow(
-                hazard_map,
-                cmap="jet",
-                alpha=0.45
-            )
-
-            ax.set_title(
-                "Lunar Terrain Heatmap Overlay"
-            )
-
-            ax.axis("off")
-
-            fig.tight_layout()
-
-            st.pyplot(
-                fig,
-                use_container_width=True
-            )
-
-            plt.close(fig)
-
-            st.caption(
-                "The heatmap highlights darker image regions "
-                "using grayscale intensity. It is a terrain "
-                "visualization, not a verified AI hazard map."
-            )
-
-            st.divider()
-
-            st.write(
-                "⚠️ Research demonstration only. "
-                "The CNN prediction depends on its training data "
-                "and correct class mapping."
-            )
-
-except Exception as e:
-
-    st.error("Model loading or prediction failed.")
-
-    st.code(
-        f"{type(e).__name__}: {e}"
+    hazard_map = 255 - gray
+    hazard_map = cv2.GaussianBlur(
+        hazard_map, (21, 21), 0
     )
+
+    # Normalize heatmap for visualization
+    heatmap = cv2.normalize(
+        hazard_map,
+        None,
+        0,
+        255,
+        cv2.NORM_MINMAX
+    ).astype("uint8")
+
+    heatmap_color = cv2.applyColorMap(
+        heatmap, cv2.COLORMAP_JET
+    )
+    heatmap_color = cv2.cvtColor(
+        heatmap_color, cv2.COLOR_BGR2RGB
+    )
+
+    # Resize original image for overlay
+    original_small = cv2.resize(
+        img_array, (224, 224)
+    )
+
+    overlay = cv2.addWeighted(
+        original_small, 0.55,
+        heatmap_color, 0.45,
+        0
+    )
+
+    # -------------------------------
+    # DISPLAY SMALLER IMAGES
+    # -------------------------------
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.subheader("Input Image")
+        st.image(
+            img_array,
+            caption="Original Lunar Image",
+            width=220
+        )
+
+    with col2:
+        st.subheader("Terrain Heatmap")
+        st.image(
+            heatmap_color,
+            caption="Heatmap Visualization",
+            width=220
+        )
+
+    with col3:
+        st.subheader("Overlay Output")
+        st.image(
+            overlay,
+            caption="Image + Heatmap",
+            width=220
+        )
+
+    # -------------------------------
+    # OPTIONAL HEATMAP LEGEND
+    # -------------------------------
+    st.caption(
+        "Heatmap colors represent grayscale intensity "
+        "after inversion and smoothing; they are not "
+        "a direct measurement of landing risk."
+    )
+
+    st.info(
+        "This is an AI-assisted preliminary result. "
+        "A SAFE prediction does not guarantee a safe landing."
+    )
+```
+
