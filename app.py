@@ -91,7 +91,7 @@ if uploaded_file is not None:
     else:
         st.error("Landing Zone: HAZARDOUS")
 
-    st.write(f"**Prediction Score:** {score:.4f}")
+    st.write(f"**THRESHOLD VALUE:** {score:.4f}")
     st.write(f"**Recommendation:** {recommendation}")
 
     # -------------------------------
