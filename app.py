@@ -169,6 +169,10 @@ if uploaded_file is not None:
         "after inversion and smoothing; they are not "
         "a direct measurement of landing risk."
     )
+prediction = model.predict(img_input, verbose=0)
 
+st.write("RAW PREDICTION:", prediction)
+st.write("MODEL OUTPUT SHAPE:", prediction.shape)
+st.write("MODEL SUMMARY:", model.output_shape)
 
 
