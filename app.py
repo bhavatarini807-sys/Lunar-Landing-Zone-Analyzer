@@ -3,7 +3,6 @@ import os
 import streamlit as st
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import cv2
 from PIL import Image
 
@@ -54,13 +53,17 @@ uploaded_file = st.file_uploader(
         "webp", "bmp", "tif", "tiff"
     ]
 )
+
 if uploaded_file is not None:
 
+    # -------------------------------
+    # IMAGE PREPROCESSING
+    # -------------------------------
     image = Image.open(uploaded_file).convert("RGB")
     img_array = np.array(image)
 
-    # Resize for model prediction
     resized_img = cv2.resize(img_array, (224, 224))
+
     img_input = resized_img.astype("float32") / 255.0
     img_input = np.expand_dims(img_input, axis=0)
 
@@ -68,45 +71,84 @@ if uploaded_file is not None:
     # MODEL PREDICTION
     # -------------------------------
     with st.spinner("Analyzing lunar surface..."):
+
         prediction = model.predict(img_input, verbose=0)
+
         score = float(prediction[0][0])
 
-    if score >= 0.5:
+        # Assumption:
+        # Model sigmoid output = Safe probability
+        # Training class order:
+        # hazardous = 0, safe = 1
+
+        safe_probability = score
+        hazard_probability = 1 - score
+
+    # -------------------------------
+    # CLASSIFICATION
+    # -------------------------------
+    if hazard_probability >= 0.5:
+
         landing_zone = "HAZARDOUS"
-        recommendation = "NOT RECOMMENDED FOR LANDING"
+
+        recommendation = (
+            "NOT RECOMMENDED FOR LANDING"
+        )
+
     else:
+
         landing_zone = "SAFE"
+
         recommendation = (
             "POTENTIALLY SUITABLE - "
             "FURTHER CHECKS NEEDED"
         )
 
+    # -------------------------------
+    # ANALYSIS RESULTS
+    # -------------------------------
     st.subheader("Analysis Results")
 
-    # -------------------------------
-    # RESULT SUMMARY
-    # -------------------------------
     if landing_zone == "SAFE":
-        st.success("Landing Zone: SAFE")
-    else:
-        st.error("Landing Zone: HAZARDOUS")
 
-    st.write(f"**THRESHOLD VALUE:** {score:.4f}")
-    st.write(f"**Recommendation:** {recommendation}")
+        st.success("🟢 Landing Zone: SAFE")
+
+    else:
+
+        st.error("🔴 Landing Zone: HAZARDOUS")
+
+    st.metric(
+        "Safe Probability",
+        f"{safe_probability * 100:.2f}%"
+    )
+
+    st.metric(
+        "Hazard Probability",
+        f"{hazard_probability * 100:.2f}%"
+    )
+
+    st.write(
+        f"**Recommendation:** {recommendation}"
+    )
 
     # -------------------------------
     # TERRAIN HEATMAP
-    # Same OpenCV method as Colab
     # -------------------------------
-    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(
+        img_array,
+        cv2.COLOR_RGB2GRAY
+    )
+
     gray = cv2.resize(gray, (224, 224))
 
     hazard_map = 255 - gray
+
     hazard_map = cv2.GaussianBlur(
-        hazard_map, (21, 21), 0
+        hazard_map,
+        (21, 21),
+        0
     )
 
-    # Normalize heatmap for visualization
     heatmap = cv2.normalize(
         hazard_map,
         None,
@@ -116,30 +158,40 @@ if uploaded_file is not None:
     ).astype("uint8")
 
     heatmap_color = cv2.applyColorMap(
-        heatmap, cv2.COLORMAP_JET
-    )
-    heatmap_color = cv2.cvtColor(
-        heatmap_color, cv2.COLOR_BGR2RGB
+        heatmap,
+        cv2.COLORMAP_JET
     )
 
-    # Resize original image for overlay
+    heatmap_color = cv2.cvtColor(
+        heatmap_color,
+        cv2.COLOR_BGR2RGB
+    )
+
+    # -------------------------------
+    # OVERLAY IMAGE
+    # -------------------------------
     original_small = cv2.resize(
-        img_array, (224, 224)
+        img_array,
+        (224, 224)
     )
 
     overlay = cv2.addWeighted(
-        original_small, 0.55,
-        heatmap_color, 0.45,
+        original_small,
+        0.55,
+        heatmap_color,
+        0.45,
         0
     )
 
     # -------------------------------
-    # DISPLAY SMALLER IMAGES
+    # DISPLAY IMAGES
     # -------------------------------
+    st.subheader("Terrain Visualization")
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader("Input Image")
+
         st.image(
             img_array,
             caption="Original Lunar Image",
@@ -147,15 +199,15 @@ if uploaded_file is not None:
         )
 
     with col2:
-        st.subheader("Terrain Heatmap")
+
         st.image(
             heatmap_color,
-            caption="Heatmap Visualization",
+            caption="Terrain Heatmap",
             width=220
         )
 
     with col3:
-        st.subheader("Overlay Output")
+
         st.image(
             overlay,
             caption="Image + Heatmap",
@@ -163,13 +215,26 @@ if uploaded_file is not None:
         )
 
     # -------------------------------
-    # OPTIONAL HEATMAP LEGEND
+    # HEATMAP LEGEND
     # -------------------------------
     st.caption(
         "Heatmap colors represent grayscale intensity "
-        "after inversion and smoothing; they are not "
+        "after inversion and smoothing. They are not "
         "a direct measurement of landing risk."
     )
 
-
-
+    # -------------------------------
+    # DOWNLOAD RESULTS
+    # -------------------------------
+    st.download_button(
+        label="Download Heatmap",
+        data=cv2.imencode(
+            ".png",
+            cv2.cvtColor(
+                heatmap_color,
+                cv2.COLOR_RGB2BGR
+            )
+        )[1].tobytes(),
+        file_name="lunar_heatmap.png",
+        mime="image/png"
+    )
