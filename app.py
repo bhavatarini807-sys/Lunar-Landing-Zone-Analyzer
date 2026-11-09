@@ -171,4 +171,3 @@ if uploaded_file is not None:
     )
 
 
-ithu la hazard image ah irunthalum safe tha show pannuthu enna pandrathu
